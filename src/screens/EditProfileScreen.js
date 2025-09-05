@@ -65,12 +65,11 @@ export default function EditProfileScreen({ navigation }) {
   // Verificar que navigation esté definido
   console.log('EditProfileScreen navigation prop:', navigation);
   
-  // Estados del formulario con los nuevos campos
+  // Estados del formulario con los campos requeridos (sin email que no se debe editar)
   const [formData, setFormData] = useState({
     name: '',
-    specialty: '',
-    group: '',
-    section: ''
+    university_title: '',
+    graduation_year: ''
   });
   const [originalData, setOriginalData] = useState({});
   const [errors, setErrors] = useState({});
@@ -89,9 +88,8 @@ export default function EditProfileScreen({ navigation }) {
         if (result.success) {
           const userData = {
             name: result.data.name || '',
-            specialty: result.data.specialty || '',
-            group: result.data.group || '',
-            section: result.data.section || ''
+            university_title: result.data.university_title || '',
+            graduation_year: result.data.graduation_year?.toString() || ''
           };
           setFormData(userData);
           setOriginalData(userData);
@@ -130,7 +128,7 @@ export default function EditProfileScreen({ navigation }) {
     }
   };
 
-  // Validaciones básicas
+  // Validaciones según requerimientos
   const validateForm = () => {
     const newErrors = {};
     
@@ -141,21 +139,22 @@ export default function EditProfileScreen({ navigation }) {
       newErrors.name = 'Nombre muy corto';
     }
     
-    // Especialidad
-    if (!formData.specialty.trim()) {
-      newErrors.specialty = 'Especialidad requerida';
-    } else if (formData.specialty.trim().length < 3) {
-      newErrors.specialty = 'Especialidad muy corta';
+    // Título universitario
+    if (!formData.university_title.trim()) {
+      newErrors.university_title = 'Título universitario requerido';
+    } else if (formData.university_title.trim().length < 3) {
+      newErrors.university_title = 'Título universitario muy corto';
     }
     
-    // Grupo
-    if (!formData.group.trim()) {
-      newErrors.group = 'Grupo requerido';
-    }
-    
-    // Sección
-    if (!formData.section.trim()) {
-      newErrors.section = 'Sección requerida';
+    // Año de graduación
+    if (!formData.graduation_year.trim()) {
+      newErrors.graduation_year = 'Año de graduación requerido';
+    } else {
+      const year = parseInt(formData.graduation_year);
+      const currentYear = new Date().getFullYear();
+      if (isNaN(year) || year < 1950 || year > currentYear + 10) {
+        newErrors.graduation_year = `Año debe estar entre 1950 y ${currentYear + 10}`;
+      }
     }
     
     setErrors(newErrors);
@@ -179,9 +178,8 @@ export default function EditProfileScreen({ navigation }) {
     try {
       const updateData = {
         name: formData.name.trim(),
-        specialty: formData.specialty.trim(),
-        group: formData.group.trim(),
-        section: formData.section.trim()
+        university_title: formData.university_title.trim(),
+        graduation_year: parseInt(formData.graduation_year)
       };
 
       const result = await updateUserData(auth.currentUser.uid, updateData);
@@ -229,7 +227,7 @@ export default function EditProfileScreen({ navigation }) {
     }
   };
 
-  const isFormValid = Object.values(formData).every(value => value.trim()) && 
+  const isFormValid = Object.values(formData).every(value => value.toString().trim()) && 
                      Object.keys(errors).length === 0;
 
   if (isLoading) {
@@ -269,7 +267,7 @@ export default function EditProfileScreen({ navigation }) {
             </View>
           )}
 
-          {/* Formulario */}
+          {/* Formulario con campos requeridos */}
           <View style={styles.form}>
             <MinimalInput
               label="Nombre"
@@ -280,27 +278,20 @@ export default function EditProfileScreen({ navigation }) {
             />
 
             <MinimalInput
-              label="Especialidad"
-              placeholder="Tu especialidad"
-              value={formData.specialty}
-              onChangeText={(text) => updateField('specialty', text)}
-              error={errors.specialty}
+              label="Título universitario"
+              placeholder="Tu título universitario"
+              value={formData.university_title}
+              onChangeText={(text) => updateField('university_title', text)}
+              error={errors.university_title}
             />
 
             <MinimalInput
-              label="Grupo"
-              placeholder="Tu grupo"
-              value={formData.group}
-              onChangeText={(text) => updateField('group', text)}
-              error={errors.group}
-            />
-
-            <MinimalInput
-              label="Sección"
-              placeholder="Tu sección"
-              value={formData.section}
-              onChangeText={(text) => updateField('section', text)}
-              error={errors.section}
+              label="Año de graduación"
+              placeholder="Año de graduación"
+              value={formData.graduation_year}
+              onChangeText={(text) => updateField('graduation_year', text)}
+              keyboardType="numeric"
+              error={errors.graduation_year}
             />
 
             {/* Botones */}

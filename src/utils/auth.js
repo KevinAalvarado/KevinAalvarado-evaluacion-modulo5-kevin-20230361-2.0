@@ -3,24 +3,26 @@ import {
   signInWithEmailAndPassword, 
   signOut 
 } from 'firebase/auth';
-import { 
-  doc, 
-  setDoc, 
-  getDoc, 
-  updateDoc, 
-  serverTimestamp 
-} from 'firebase/firestore';
-import { auth, db } from '../config/firebase';
+import { auth } from '../config/firebase';
+
+// Configuración de Firebase para usar con Fetch API
+const FIREBASE_CONFIG = {
+  projectId: 'evaluacion-modulo5-kev20230361',
+  apiKey: 'AIzaSyBawJxlcs4H70EmR3-gWTj7lgAUHkWnwQk'
+};
+
+// URL base para Firestore REST API
+const FIRESTORE_BASE_URL = `https://firestore.googleapis.com/v1/projects/${FIREBASE_CONFIG.projectId}/databases/(default)/documents`;
 
 // Función para manejar errores de Firebase
 const handleFirebaseError = (error) => {
   switch (error.code) {
     case 'auth/email-already-in-use':
-      return 'Este email ya está registrado';
+      return 'Este correo electrónico ya está registrado';
     case 'auth/weak-password':
       return 'La contraseña debe tener al menos 6 caracteres';
     case 'auth/invalid-email':
-      return 'Email inválido';
+      return 'Correo electrónico inválido';
     case 'auth/user-not-found':
       return 'Usuario no encontrado';
     case 'auth/wrong-password':
@@ -34,11 +36,63 @@ const handleFirebaseError = (error) => {
   }
 };
 
-// Registrar nuevo usuario con los nuevos campos
+// Función para convertir datos a formato Firestore
+const toFirestoreFormat = (data) => {
+  const firestoreData = {};
+  
+  Object.keys(data).forEach(key => {
+    const value = data[key];
+    
+    if (typeof value === 'string') {
+      firestoreData[key] = { stringValue: value };
+    } else if (typeof value === 'number') {
+      firestoreData[key] = { integerValue: value.toString() };
+    } else if (value instanceof Date) {
+      firestoreData[key] = { timestampValue: value.toISOString() };
+    } else if (value === null) {
+      firestoreData[key] = { nullValue: null };
+    }
+  });
+  
+  return { fields: firestoreData };
+};
+
+// Función para convertir datos desde formato Firestore
+const fromFirestoreFormat = (firestoreDoc) => {
+  const data = {};
+  
+  if (firestoreDoc.fields) {
+    Object.keys(firestoreDoc.fields).forEach(key => {
+      const field = firestoreDoc.fields[key];
+      
+      if (field.stringValue !== undefined) {
+        data[key] = field.stringValue;
+      } else if (field.integerValue !== undefined) {
+        data[key] = parseInt(field.integerValue);
+      } else if (field.timestampValue !== undefined) {
+        data[key] = new Date(field.timestampValue);
+      } else if (field.nullValue !== undefined) {
+        data[key] = null;
+      }
+    });
+  }
+  
+  return data;
+};
+
+// Función para obtener token de autenticación
+const getAuthToken = async () => {
+  if (auth.currentUser) {
+    return await auth.currentUser.getIdToken();
+  }
+  return null;
+};
+
+// Registrar nuevo usuario usando Fetch API
 export const registerUser = async (userData) => {
   try {
-    // Validar datos antes de enviar
-    const requiredFields = ['name', 'email', 'password', 'specialty', 'group', 'section'];
+    // Validar datos según requerimientos
+    const requiredFields = ['name', 'email', 'password', 'university_title', 'graduation_year'];
     const missingFields = requiredFields.filter(field => !userData[field] || !userData[field].toString().trim());
     
     if (missingFields.length > 0) {
@@ -48,13 +102,11 @@ export const registerUser = async (userData) => {
       };
     }
 
-    console.log('Registering user with data:', {
+    console.log('Registering user with Fetch API:', {
       name: userData.name,
       email: userData.email,
-      specialty: userData.specialty,
-      group: userData.group,
-      section: userData.section
-      // No loggeamos la contraseña por seguridad
+      university_title: userData.university_title,
+      graduation_year: userData.graduation_year
     });
 
     // Crear usuario en Firebase Auth
@@ -65,37 +117,51 @@ export const registerUser = async (userData) => {
     );
     const user = userCredential.user;
     
-    // Guardar datos adicionales en Firestore con los nuevos campos
+    // Preparar datos para Firestore usando Fetch API
     const userDocData = {
       name: userData.name.trim(),
       email: userData.email.trim().toLowerCase(),
-      specialty: userData.specialty.trim(),
-      group: userData.group.trim(),
-      section: userData.section.trim(),
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp()
+      university_title: userData.university_title.trim(),
+      graduation_year: parseInt(userData.graduation_year),
+      createdAt: new Date(),
+      updatedAt: new Date()
     };
 
-    console.log('Saving user document to Firestore:', userDocData);
-
-    await setDoc(doc(db, 'users', user.uid), userDocData);
+    // Obtener token de autenticación
+    const token = await getAuthToken();
     
-    console.log('User registered successfully');
+    // Guardar datos en Firestore usando Fetch API
+    const response = await fetch(`${FIRESTORE_BASE_URL}/users/${user.uid}`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify(toFirestoreFormat(userDocData))
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(`Error de Firestore: ${errorData.error?.message || 'Error desconocido'}`);
+    }
+
+    console.log('User registered successfully using Fetch API');
     return { success: true, user };
   } catch (error) {
-    console.error('Error en registerUser:', error);
+    console.error('Error en registerUser con Fetch API:', error);
     return { success: false, error: handleFirebaseError(error) };
   }
 };
 
-// Iniciar sesión (sin cambios necesarios)
+// Iniciar sesión (solo Firebase Auth, sin cambios)
 export const loginUser = async (email, password) => {
   try {
     // Validar parámetros
     if (!email || !password) {
-      return { success: false, error: 'Email y contraseña son requeridos' };
+      return { success: false, error: 'Correo electrónico y contraseña son requeridos' };
     }
 
+    console.log('Login user with Firebase Auth');
     const userCredential = await signInWithEmailAndPassword(
       auth, 
       email.trim().toLowerCase(), 
@@ -110,7 +176,7 @@ export const loginUser = async (email, password) => {
   }
 };
 
-// Cerrar sesión (sin cambios necesarios)
+// Cerrar sesión (solo Firebase Auth, sin cambios)
 export const logoutUser = async () => {
   try {
     await signOut(auth);
@@ -122,60 +188,68 @@ export const logoutUser = async () => {
   }
 };
 
-// Obtener datos del usuario (actualizado para nuevos campos)
+// Obtener datos del usuario usando Fetch API
 export const getUserData = async (uid) => {
   try {
     if (!uid) {
       return { success: false, error: 'UID de usuario requerido' };
     }
 
-    console.log('Getting user data for UID:', uid);
-    const docRef = doc(db, 'users', uid);
-    const docSnap = await getDoc(docRef);
+    console.log('Getting user data with Fetch API for UID:', uid);
     
-    if (docSnap.exists()) {
-      const userData = docSnap.data();
-      
-      console.log('User data retrieved:', {
-        name: userData.name,
-        email: userData.email,
-        specialty: userData.specialty,
-        group: userData.group,
-        section: userData.section
-      });
-      
-      // Convertir timestamp a fecha legible si existe
-      if (userData.createdAt) {
-        userData.createdAt = userData.createdAt.toDate?.() || userData.createdAt;
+    // Obtener token de autenticación
+    const token = await getAuthToken();
+    
+    // Hacer petición a Firestore usando Fetch API
+    const response = await fetch(`${FIRESTORE_BASE_URL}/users/${uid}`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
       }
-      if (userData.updatedAt) {
-        userData.updatedAt = userData.updatedAt.toDate?.() || userData.updatedAt;
+    });
+
+    if (!response.ok) {
+      if (response.status === 404) {
+        return { success: false, error: 'Usuario no encontrado en la base de datos' };
       }
-      
-      // Asegurar que todos los campos nuevos existan (para usuarios existentes)
-      const completeUserData = {
-        name: userData.name || '',
-        email: userData.email || '',
-        specialty: userData.specialty || '',
-        group: userData.group || '', // Campo nuevo
-        section: userData.section || '', // Campo nuevo
-        createdAt: userData.createdAt,
-        updatedAt: userData.updatedAt,
-        // Mantener compatibilidad con datos antiguos
-        ...(userData.age && { age: userData.age }) // Solo si existe el campo age
-      };
-      
-      return { success: true, data: completeUserData };
-    } else {
-      return { success: false, error: 'Usuario no encontrado en la base de datos' };
+      const errorData = await response.json();
+      throw new Error(`Error de Firestore: ${errorData.error?.message || 'Error desconocido'}`);
     }
+
+    const firestoreDoc = await response.json();
+    const userData = fromFirestoreFormat(firestoreDoc);
+    
+    console.log('User data retrieved with Fetch API:', {
+      name: userData.name,
+      email: userData.email,
+      university_title: userData.university_title,
+      graduation_year: userData.graduation_year
+    });
+    
+    // Asegurar que todos los campos requeridos existan
+    const completeUserData = {
+      name: userData.name || '',
+      email: userData.email || '',
+      university_title: userData.university_title || '',
+      graduation_year: userData.graduation_year || '',
+      createdAt: userData.createdAt,
+      updatedAt: userData.updatedAt,
+      // Mantener compatibilidad con datos antiguos si existen
+      ...(userData.specialty && { specialty: userData.specialty }),
+      ...(userData.group && { group: userData.group }),
+      ...(userData.section && { section: userData.section }),
+      ...(userData.age && { age: userData.age })
+    };
+    
+    return { success: true, data: completeUserData };
   } catch (error) {
-    console.error('Error en getUserData:', error);
-    return { success: false, error: handleFirebaseError(error) };
+    console.error('Error en getUserData con Fetch API:', error);
+    return { success: false, error: error.message || 'Error al obtener datos del usuario' };
   }
 };
 
-// Actualizar datos del usuario (actualizado para nuevos campos)
+// Actualizar datos del usuario usando Fetch API
 export const updateUserData = async (uid, userData) => {
   try {
     if (!uid) {
@@ -186,16 +260,14 @@ export const updateUserData = async (uid, userData) => {
       return { success: false, error: 'Datos para actualizar requeridos' };
     }
 
-    console.log('Updating user data for UID:', uid, 'with data:', userData);
+    console.log('Updating user data with Fetch API for UID:', uid, 'with data:', userData);
 
-    const docRef = doc(db, 'users', uid);
-    
-    // Preparar datos para actualización con los nuevos campos
+    // Preparar datos para actualización
     const updateData = {
-      updatedAt: serverTimestamp()
+      updatedAt: new Date()
     };
 
-    // Validar y limpiar datos según el campo
+    // Validar y limpiar datos según el campo requerido
     if (userData.name !== undefined) {
       if (!userData.name || typeof userData.name !== 'string') {
         return { success: false, error: 'Nombre debe ser un texto válido' };
@@ -203,43 +275,43 @@ export const updateUserData = async (uid, userData) => {
       updateData.name = userData.name.toString().trim();
     }
 
-    if (userData.specialty !== undefined) {
-      if (!userData.specialty || typeof userData.specialty !== 'string') {
-        return { success: false, error: 'Especialidad debe ser un texto válido' };
+    if (userData.university_title !== undefined) {
+      if (!userData.university_title || typeof userData.university_title !== 'string') {
+        return { success: false, error: 'Título universitario debe ser un texto válido' };
       }
-      updateData.specialty = userData.specialty.toString().trim();
+      updateData.university_title = userData.university_title.toString().trim();
     }
 
-    if (userData.group !== undefined) {
-      if (!userData.group || typeof userData.group !== 'string') {
-        return { success: false, error: 'Grupo debe ser un texto válido' };
+    if (userData.graduation_year !== undefined) {
+      const year = parseInt(userData.graduation_year);
+      if (isNaN(year)) {
+        return { success: false, error: 'Año de graduación debe ser un número válido' };
       }
-      updateData.group = userData.group.toString().trim();
+      updateData.graduation_year = year;
     }
 
-    if (userData.section !== undefined) {
-      if (!userData.section || typeof userData.section !== 'string') {
-        return { success: false, error: 'Sección debe ser un texto válido' };
-      }
-      updateData.section = userData.section.toString().trim();
-    }
-
-    // Mantener compatibilidad con el campo age si existe
-    if (userData.age !== undefined) {
-      const ageNum = parseInt(userData.age);
-      if (isNaN(ageNum)) {
-        return { success: false, error: 'Edad debe ser un número válido' };
-      }
-      updateData.age = ageNum;
-    }
-
-    console.log('Final update data:', updateData);
-    await updateDoc(docRef, updateData);
+    // Obtener token de autenticación
+    const token = await getAuthToken();
     
-    console.log('User data updated successfully');
+    // Actualizar en Firestore usando Fetch API
+    const response = await fetch(`${FIRESTORE_BASE_URL}/users/${uid}`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify(toFirestoreFormat(updateData))
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(`Error de Firestore: ${errorData.error?.message || 'Error desconocido'}`);
+    }
+
+    console.log('User data updated successfully with Fetch API');
     return { success: true };
   } catch (error) {
-    console.error('Error en updateUserData:', error);
-    return { success: false, error: handleFirebaseError(error) };
+    console.error('Error en updateUserData con Fetch API:', error);
+    return { success: false, error: error.message || 'Error al actualizar datos del usuario' };
   }
 };

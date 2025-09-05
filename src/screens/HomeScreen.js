@@ -151,18 +151,13 @@ export default function HomeScreen({ navigation }) {
               </View>
               
               <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Especialidad</Text>
-                <Text style={styles.infoValue}>{userData.specialty}</Text>
+                <Text style={styles.infoLabel}>Título universitario</Text>
+                <Text style={styles.infoValue}>{userData.university_title}</Text>
               </View>
               
               <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Grupo</Text>
-                <Text style={styles.infoValue}>{userData.group}</Text>
-              </View>
-              
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Sección</Text>
-                <Text style={styles.infoValue}>{userData.section}</Text>
+                <Text style={styles.infoLabel}>Año de graduación</Text>
+                <Text style={styles.infoValue}>{userData.graduation_year}</Text>
               </View>
             </View>
           </View>

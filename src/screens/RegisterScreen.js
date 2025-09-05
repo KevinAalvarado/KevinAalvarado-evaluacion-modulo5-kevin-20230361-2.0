@@ -80,14 +80,13 @@ export default function RegisterScreen({ navigation }) {
   // Verificar que navigation esté definido
   console.log('RegisterScreen navigation prop:', navigation);
   
-  // Estados del formulario con los nuevos campos
+  // Estados del formulario con los campos requeridos
   const [formData, setFormData] = useState({
     name: '',
     email: '',
     password: '',
-    specialty: '',
-    group: '',
-    section: ''
+    university_title: '',
+    graduation_year: ''
   });
   const [errors, setErrors] = useState({});
   const [isLoading, setIsLoading] = useState(false);
@@ -112,7 +111,7 @@ export default function RegisterScreen({ navigation }) {
     }
   };
 
-  // Validaciones básicas y claras
+  // Validaciones básicas según requerimientos
   const validateForm = () => {
     const newErrors = {};
     
@@ -125,9 +124,9 @@ export default function RegisterScreen({ navigation }) {
     
     // Email
     if (!formData.email.trim()) {
-      newErrors.email = 'Email requerido';
+      newErrors.email = 'Correo electrónico requerido';
     } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
-      newErrors.email = 'Email inválido';
+      newErrors.email = 'Correo electrónico inválido';
     }
     
     // Contraseña
@@ -137,21 +136,22 @@ export default function RegisterScreen({ navigation }) {
       newErrors.password = 'Mínimo 6 caracteres';
     }
     
-    // Especialidad
-    if (!formData.specialty.trim()) {
-      newErrors.specialty = 'Especialidad requerida';
-    } else if (formData.specialty.trim().length < 3) {
-      newErrors.specialty = 'Especialidad muy corta';
+    // Título universitario
+    if (!formData.university_title.trim()) {
+      newErrors.university_title = 'Título universitario requerido';
+    } else if (formData.university_title.trim().length < 3) {
+      newErrors.university_title = 'Título universitario muy corto';
     }
     
-    // Grupo
-    if (!formData.group.trim()) {
-      newErrors.group = 'Grupo requerido';
-    }
-    
-    // Sección
-    if (!formData.section.trim()) {
-      newErrors.section = 'Sección requerida';
+    // Año de graduación
+    if (!formData.graduation_year.trim()) {
+      newErrors.graduation_year = 'Año de graduación requerido';
+    } else {
+      const year = parseInt(formData.graduation_year);
+      const currentYear = new Date().getFullYear();
+      if (isNaN(year) || year < 1950 || year > currentYear + 10) {
+        newErrors.graduation_year = `Año debe estar entre 1950 y ${currentYear + 10}`;
+      }
     }
     
     setErrors(newErrors);
@@ -169,9 +169,8 @@ export default function RegisterScreen({ navigation }) {
         name: formData.name.trim(),
         email: formData.email.trim().toLowerCase(),
         password: formData.password,
-        specialty: formData.specialty.trim(),
-        group: formData.group.trim(),
-        section: formData.section.trim()
+        university_title: formData.university_title.trim(),
+        graduation_year: parseInt(formData.graduation_year)
       };
 
       const result = await registerUser(userData);
@@ -197,7 +196,7 @@ export default function RegisterScreen({ navigation }) {
     }
   };
 
-  const isFormValid = Object.values(formData).every(value => value.trim()) && 
+  const isFormValid = Object.values(formData).every(value => value.toString().trim()) && 
                      Object.keys(errors).length === 0;
 
   return (
@@ -217,7 +216,7 @@ export default function RegisterScreen({ navigation }) {
             <Text style={styles.subtitle}>Únete a nosotros</Text>
           </View>
 
-          {/* Formulario limpio */}
+          {/* Formulario con campos requeridos */}
           <View style={styles.form}>
             <MinimalInput
               placeholder="Nombre completo"
@@ -227,7 +226,7 @@ export default function RegisterScreen({ navigation }) {
             />
 
             <MinimalInput
-              placeholder="Email"
+              placeholder="Correo electrónico"
               value={formData.email}
               onChangeText={(text) => updateField('email', text)}
               keyboardType="email-address"
@@ -245,24 +244,18 @@ export default function RegisterScreen({ navigation }) {
             />
 
             <MinimalInput
-              placeholder="Especialidad"
-              value={formData.specialty}
-              onChangeText={(text) => updateField('specialty', text)}
-              error={errors.specialty}
+              placeholder="Título universitario"
+              value={formData.university_title}
+              onChangeText={(text) => updateField('university_title', text)}
+              error={errors.university_title}
             />
 
             <MinimalInput
-              placeholder="Grupo"
-              value={formData.group}
-              onChangeText={(text) => updateField('group', text)}
-              error={errors.group}
-            />
-
-            <MinimalInput
-              placeholder="Sección"
-              value={formData.section}
-              onChangeText={(text) => updateField('section', text)}
-              error={errors.section}
+              placeholder="Año de graduación"
+              value={formData.graduation_year}
+              onChangeText={(text) => updateField('graduation_year', text)}
+              keyboardType="numeric"
+              error={errors.graduation_year}
             />
 
             <MinimalButton
