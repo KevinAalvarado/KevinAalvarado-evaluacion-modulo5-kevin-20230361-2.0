@@ -62,12 +62,12 @@ const MinimalButton = ({ title, onPress, loading = false, disabled = false, vari
 );
 
 export default function EditProfileScreen({ navigation }) {
-  // Verificar que navigation esté definido
   console.log('EditProfileScreen navigation prop:', navigation);
   
-  // Estados del formulario con los campos requeridos (sin email que no se debe editar)
+  // Estados del formulario con los campos correctos
   const [formData, setFormData] = useState({
     name: '',
+    email: '',
     university_title: '',
     graduation_year: ''
   });
@@ -80,14 +80,35 @@ export default function EditProfileScreen({ navigation }) {
     loadUserData();
   }, []);
 
-  // Cargar datos del usuario
+  // Cargar datos del usuario - CORREGIDO PARA USAR DATOS DEL NAVIGATOR PRIMERO
   const loadUserData = async () => {
+    console.log('Loading user data...');
+    console.log('Navigation userData:', navigation?.userData);
+    
+    // Primero intenta usar los datos que ya tiene el Navigator
+    if (navigation && navigation.userData) {
+      console.log('Using data from Navigator');
+      const userData = {
+        name: navigation.userData.name || '',
+        email: navigation.userData.email || '',
+        university_title: navigation.userData.university_title || '',
+        graduation_year: navigation.userData.graduation_year?.toString() || ''
+      };
+      setFormData(userData);
+      setOriginalData(userData);
+      setIsLoading(false);
+      return;
+    }
+
+    // Si no hay datos en Navigator, cargar desde Firebase
+    console.log('No data in Navigator, loading from Firebase...');
     if (auth.currentUser) {
       try {
         const result = await getUserData(auth.currentUser.uid);
         if (result.success) {
           const userData = {
             name: result.data.name || '',
+            email: result.data.email || '',
             university_title: result.data.university_title || '',
             graduation_year: result.data.graduation_year?.toString() || ''
           };
@@ -128,7 +149,7 @@ export default function EditProfileScreen({ navigation }) {
     }
   };
 
-  // Validaciones según requerimientos
+  // Validaciones básicas
   const validateForm = () => {
     const newErrors = {};
     
@@ -137,6 +158,13 @@ export default function EditProfileScreen({ navigation }) {
       newErrors.name = 'Nombre requerido';
     } else if (formData.name.trim().length < 2) {
       newErrors.name = 'Nombre muy corto';
+    }
+    
+    // Email
+    if (!formData.email.trim()) {
+      newErrors.email = 'Email requerido';
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
+      newErrors.email = 'Email inválido';
     }
     
     // Título universitario
@@ -178,6 +206,7 @@ export default function EditProfileScreen({ navigation }) {
     try {
       const updateData = {
         name: formData.name.trim(),
+        email: formData.email.trim().toLowerCase(),
         university_title: formData.university_title.trim(),
         graduation_year: parseInt(formData.graduation_year)
       };
@@ -267,7 +296,7 @@ export default function EditProfileScreen({ navigation }) {
             </View>
           )}
 
-          {/* Formulario con campos requeridos */}
+          {/* Formulario */}
           <View style={styles.form}>
             <MinimalInput
               label="Nombre"
@@ -275,6 +304,15 @@ export default function EditProfileScreen({ navigation }) {
               value={formData.name}
               onChangeText={(text) => updateField('name', text)}
               error={errors.name}
+            />
+
+            <MinimalInput
+              label="Email"
+              placeholder="Tu email"
+              value={formData.email}
+              onChangeText={(text) => updateField('email', text)}
+              keyboardType="email-address"
+              error={errors.email}
             />
 
             <MinimalInput
@@ -287,7 +325,7 @@ export default function EditProfileScreen({ navigation }) {
 
             <MinimalInput
               label="Año de graduación"
-              placeholder="Año de graduación"
+              placeholder="Tu año de graduación"
               value={formData.graduation_year}
               onChangeText={(text) => updateField('graduation_year', text)}
               keyboardType="numeric"

@@ -91,7 +91,7 @@ const getAuthToken = async () => {
 // Registrar nuevo usuario usando Fetch API
 export const registerUser = async (userData) => {
   try {
-    // Validar datos según requerimientos
+    // Validar datos según los campos REALES que usan las pantallas
     const requiredFields = ['name', 'email', 'password', 'university_title', 'graduation_year'];
     const missingFields = requiredFields.filter(field => !userData[field] || !userData[field].toString().trim());
     
@@ -109,15 +109,7 @@ export const registerUser = async (userData) => {
       graduation_year: userData.graduation_year
     });
 
-    // Crear usuario en Firebase Auth
-    const userCredential = await createUserWithEmailAndPassword(
-      auth, 
-      userData.email.trim().toLowerCase(), 
-      userData.password
-    );
-    const user = userCredential.user;
-    
-    // Preparar datos para Firestore usando Fetch API
+    // Preparar datos para Firestore ANTES de crear el usuario
     const userDocData = {
       name: userData.name.trim(),
       email: userData.email.trim().toLowerCase(),
@@ -127,10 +119,20 @@ export const registerUser = async (userData) => {
       updatedAt: new Date()
     };
 
+    // Crear usuario en Firebase Auth
+    const userCredential = await createUserWithEmailAndPassword(
+      auth, 
+      userData.email.trim().toLowerCase(), 
+      userData.password
+    );
+    const user = userCredential.user;
+    
+    console.log('User created in Auth, now saving to Firestore...');
+
     // Obtener token de autenticación
     const token = await getAuthToken();
     
-    // Guardar datos en Firestore usando Fetch API
+    // Guardar datos en Firestore usando Fetch API - INMEDIATAMENTE después del Auth
     const response = await fetch(`${FIRESTORE_BASE_URL}/users/${user.uid}`, {
       method: 'PATCH',
       headers: {
@@ -142,11 +144,27 @@ export const registerUser = async (userData) => {
 
     if (!response.ok) {
       const errorData = await response.json();
+      console.error('Firestore save failed:', errorData);
+      
+      // Si falla guardar en Firestore, eliminar el usuario de Auth
+      await user.delete();
       throw new Error(`Error de Firestore: ${errorData.error?.message || 'Error desconocido'}`);
     }
 
     console.log('User registered successfully using Fetch API');
-    return { success: true, user };
+    
+    // Pequeño delay para asegurar que Firestore esté sincronizado
+    await new Promise(resolve => setTimeout(resolve, 500));
+    
+    // CERRAR SESIÓN AUTOMÁTICAMENTE DESPUÉS DEL REGISTRO
+    try {
+      await signOut(auth);
+      console.log('User logged out after registration');
+    } catch (logoutError) {
+      console.log('Logout after registration failed, but continuing...');
+    }
+    
+    return { success: true, user, userData: userDocData };
   } catch (error) {
     console.error('Error en registerUser con Fetch API:', error);
     return { success: false, error: handleFirebaseError(error) };
@@ -234,12 +252,7 @@ export const getUserData = async (uid) => {
       university_title: userData.university_title || '',
       graduation_year: userData.graduation_year || '',
       createdAt: userData.createdAt,
-      updatedAt: userData.updatedAt,
-      // Mantener compatibilidad con datos antiguos si existen
-      ...(userData.specialty && { specialty: userData.specialty }),
-      ...(userData.group && { group: userData.group }),
-      ...(userData.section && { section: userData.section }),
-      ...(userData.age && { age: userData.age })
+      updatedAt: userData.updatedAt
     };
     
     return { success: true, data: completeUserData };
@@ -267,12 +280,19 @@ export const updateUserData = async (uid, userData) => {
       updatedAt: new Date()
     };
 
-    // Validar y limpiar datos según el campo requerido
+    // Validar y limpiar datos según los campos REALES
     if (userData.name !== undefined) {
       if (!userData.name || typeof userData.name !== 'string') {
         return { success: false, error: 'Nombre debe ser un texto válido' };
       }
       updateData.name = userData.name.toString().trim();
+    }
+
+    if (userData.email !== undefined) {
+      if (!userData.email || typeof userData.email !== 'string') {
+        return { success: false, error: 'Email debe ser un texto válido' };
+      }
+      updateData.email = userData.email.toString().trim().toLowerCase();
     }
 
     if (userData.university_title !== undefined) {

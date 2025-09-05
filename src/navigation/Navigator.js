@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, BackHandler, Alert } from 'react-native';
+import { View, Text, StyleSheet, BackHandler, Alert } from 'react-native';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from '../config/firebase';
+import { getUserData } from '../utils/auth';
 
 import SplashScreen from '../screens/SplashScreen';
 import Navbar from '../components/Navbar';
@@ -13,26 +14,66 @@ import EditProfileScreen from '../screens/EditProfileScreen';
 export default function AppNavigator() {
   // Estados principales
   const [user, setUser] = useState(null);
+  const [userData, setUserData] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [authChecked, setAuthChecked] = useState(false); // Nuevo estado
+  const [authChecked, setAuthChecked] = useState(false);
+  const [userDataLoaded, setUserDataLoaded] = useState(false);
   const [currentScreen, setCurrentScreen] = useState('Register');
   const [screenHistory, setScreenHistory] = useState(['Register']);
 
   useEffect(() => {
-    // Listener para cambios en el estado de autenticación
-    const unsubscribe = onAuthStateChanged(auth, (authenticatedUser) => {
-      console.log('Auth state changed:', authenticatedUser ? 'User logged in' : 'User logged out');
-      setUser(authenticatedUser);
-      setAuthChecked(true); // Marcar que ya verificamos la auth
-      
-      if (authenticatedUser) {
-        // Usuario autenticado - ir a Home
-        navigateToScreen('Home', true);
-      } else {
-        // Usuario no autenticado - ir a Login por defecto
-        navigateToScreen('Login', true);
+// En Navigator.js, modifica el onAuthStateChanged:
+const unsubscribe = onAuthStateChanged(auth, async (authenticatedUser) => {
+  console.log('🔥 AUTH STATE CHANGED:');
+  console.log('  - User:', authenticatedUser ? 'LOGGED IN' : 'LOGGED OUT');
+  console.log('  - UID:', authenticatedUser?.uid);
+  
+  setUser(authenticatedUser);
+  
+  if (authenticatedUser) {
+    console.log('📱 Loading user data for:', authenticatedUser.uid);
+    
+    // Retry lógico para nuevos usuarios
+    const loadWithRetry = async (retries = 3) => {
+      for (let i = 0; i < retries; i++) {
+        try {
+          console.log(`Attempt ${i + 1} to load user data...`);
+          const result = await getUserData(authenticatedUser.uid);
+          
+          if (result.success) {
+            console.log('📊 User data result: SUCCESS');
+            console.log('✅ Navigating to Home...');
+            setUserData(result.data);
+            setUserDataLoaded(true);
+            navigateToScreen('Home', true);
+            return;
+          } else if (i < retries - 1) {
+            console.log(`Attempt ${i + 1} failed, retrying in 1 second...`);
+            await new Promise(resolve => setTimeout(resolve, 1000));
+          }
+        } catch (error) {
+          console.log(`Attempt ${i + 1} error:`, error);
+          if (i < retries - 1) {
+            await new Promise(resolve => setTimeout(resolve, 1000));
+          }
+        }
       }
-    });
+      
+      // Si todos los intentos fallan
+      console.log('❌ All attempts failed');
+      setUserDataLoaded(false);
+      navigateToScreen('Login', true);
+    };
+    
+    await loadWithRetry();
+  } else {
+    setUserData(null);
+    setUserDataLoaded(false);
+    navigateToScreen('Login', true);
+  }
+  
+  setAuthChecked(true);
+});
 
     // Cleanup del listener
     return unsubscribe;
@@ -135,6 +176,23 @@ export default function AppNavigator() {
     }
   };
 
+  // Función para refrescar datos del usuario (para usar desde las pantallas)
+  const refreshUserData = async () => {
+    if (user) {
+      console.log('Refreshing user data...');
+      try {
+        const result = await getUserData(user.uid);
+        if (result.success) {
+          setUserData(result.data);
+          return result.data;
+        }
+      } catch (error) {
+        console.error('Error refreshing user data:', error);
+      }
+    }
+    return null;
+  };
+
   // Mostrar splash screen mientras carga
   if (loading) {
     return <SplashScreen />;
@@ -145,16 +203,17 @@ export default function AppNavigator() {
     // Props de navegación que se pasan a todas las pantallas
     const navigationProps = { 
       navigation: { 
-        navigate: navigate, // Asegurar que navigate esté definido
+        navigate: navigate,
         goBack: goBack,
         currentScreen: currentScreen,
         canGoBack: screenHistory.length > 1,
-        user: user 
+        user: user,
+        userData: userData, // Pasar datos del usuario
+        refreshUserData: refreshUserData // Función para refrescar datos
       } 
     };
     
-    console.log('Rendering screen:', currentScreen, 'User:', user ? 'logged in' : 'logged out');
-    console.log('Navigation props being passed:', Object.keys(navigationProps.navigation));
+    console.log('Rendering screen:', currentScreen, 'User:', user ? 'logged in' : 'logged out', 'Data loaded:', userDataLoaded);
     
     // Renderizar pantalla según el estado actual
     switch (currentScreen) {
@@ -165,18 +224,41 @@ export default function AppNavigator() {
         return <LoginScreen {...navigationProps} />;
       
       case 'Home':
-        return user ? (
-          <HomeScreen {...navigationProps} />
-        ) : (
-          <LoginScreen {...navigationProps} />
-        );
+        if (user) {
+          // Si el usuario está autenticado pero los datos aún no cargan
+          if (!userDataLoaded) {
+            return (
+              <View style={styles.loadingContainer}>
+                <View style={styles.loadingContent}>
+                  <Text style={styles.loadingText}>Cargando perfil...</Text>
+                  <Text style={styles.loadingSubtext}>Obteniendo tus datos</Text>
+                </View>
+              </View>
+            );
+          }
+          // Usuario y datos cargados - mostrar Home
+          return <HomeScreen {...navigationProps} />;
+        } else {
+          // No hay usuario - volver al login
+          return <LoginScreen {...navigationProps} />;
+        }
       
       case 'EditProfile':
-        return user ? (
-          <EditProfileScreen {...navigationProps} />
-        ) : (
-          <LoginScreen {...navigationProps} />
-        );
+        if (user && userDataLoaded) {
+          return <EditProfileScreen {...navigationProps} />;
+        } else if (user && !userDataLoaded) {
+          // Usuario autenticado pero datos no cargados
+          return (
+            <View style={styles.loadingContainer}>
+              <View style={styles.loadingContent}>
+                <Text style={styles.loadingText}>Cargando datos...</Text>
+              </View>
+            </View>
+          );
+        } else {
+          // No hay usuario - volver al login
+          return <LoginScreen {...navigationProps} />;
+        }
       
       default:
         // Pantalla por defecto
@@ -190,12 +272,13 @@ export default function AppNavigator() {
       {/* Renderizar pantalla actual */}
       {renderScreen()}
       
-      {/* Mostrar navbar solo si el usuario está autenticado */}
-      {user && (
+      {/* Mostrar navbar solo si el usuario está autenticado Y los datos están cargados */}
+      {user && userDataLoaded && (
         <Navbar 
           currentScreen={currentScreen} 
-          navigate={navigate} // Asegurar que navigate esté pasado
+          navigate={navigate}
           user={user}
+          userData={userData}
         />
       )}
     </View>
@@ -206,5 +289,28 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#ffffff'
-  }
+  },
+  // Estilos para pantalla de carga
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#ffffff',
+    paddingHorizontal: 40,
+  },
+  loadingContent: {
+    alignItems: 'center',
+  },
+  loadingText: {
+    fontSize: 18,
+    fontWeight: '300',
+    color: '#000000',
+    marginBottom: 8,
+    letterSpacing: 0.5,
+  },
+  loadingSubtext: {
+    fontSize: 14,
+    color: '#666666',
+    fontWeight: '300',
+  },
 });
